@@ -1,0 +1,128 @@
+{
+  "Comment": "Leave approval: manager -> (HR if long leave) -> settle balance. 48h timeout escalates to HR.",
+  "StartAt": "NotifyManager",
+  "States": {
+    "NotifyManager": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
+      "Parameters": {
+        "FunctionName": "${NOTIFY_APPROVER_ARN}",
+        "Payload": { "stage": "MANAGER", "request.$": "$", "task_token.$": "$$.Task.Token" }
+      },
+      "TimeoutSecondsPath": "$.approval_timeout",
+      "ResultPath": "$.manager_result",
+      "Catch": [
+        { "ErrorEquals": ["States.Timeout"], "ResultPath": "$.error", "Next": "EscalateToHR" },
+        { "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "MarkFailed" }
+      ],
+      "Next": "ManagerDecision"
+    },
+
+    "ManagerDecision": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            { "Variable": "$.manager_result.decision", "StringEquals": "APPROVED" },
+            { "Variable": "$.requires_hr", "BooleanEquals": true }
+          ],
+          "Next": "NotifyHR"
+        },
+        { "Variable": "$.manager_result.decision", "StringEquals": "APPROVED", "Next": "FinalApprove" }
+      ],
+      "Default": "FinalReject"
+    },
+
+    "EscalateToHR": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${WORKFLOW_ACTIONS_ARN}",
+        "Payload": { "action": "ESCALATE", "request.$": "$" }
+      },
+      "ResultPath": "$.escalation",
+      "Retry": [
+        { "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 2, "MaxAttempts": 3, "BackoffRate": 2.0 }
+      ],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "MarkFailed" }],
+      "Next": "NotifyHR"
+    },
+
+    "NotifyHR": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
+      "Parameters": {
+        "FunctionName": "${NOTIFY_APPROVER_ARN}",
+        "Payload": { "stage": "HR", "request.$": "$", "task_token.$": "$$.Task.Token" }
+      },
+      "TimeoutSecondsPath": "$.approval_timeout",
+      "ResultPath": "$.hr_result",
+      "Catch": [
+        { "ErrorEquals": ["States.Timeout"], "ResultPath": "$.error", "Next": "ExpireRequest" },
+        { "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "MarkFailed" }
+      ],
+      "Next": "HRDecision"
+    },
+
+    "HRDecision": {
+      "Type": "Choice",
+      "Choices": [
+        { "Variable": "$.hr_result.decision", "StringEquals": "APPROVED", "Next": "FinalApprove" }
+      ],
+      "Default": "FinalReject"
+    },
+
+    "FinalApprove": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${WORKFLOW_ACTIONS_ARN}",
+        "Payload": { "action": "FINAL_APPROVE", "request.$": "$" }
+      },
+      "ResultPath": "$.result",
+      "Retry": [
+        { "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 2, "MaxAttempts": 3, "BackoffRate": 2.0 }
+      ],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "MarkFailed" }],
+      "End": true
+    },
+
+    "FinalReject": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${WORKFLOW_ACTIONS_ARN}",
+        "Payload": { "action": "FINAL_REJECT", "request.$": "$" }
+      },
+      "ResultPath": "$.result",
+      "Retry": [
+        { "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 2, "MaxAttempts": 3, "BackoffRate": 2.0 }
+      ],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "MarkFailed" }],
+      "End": true
+    },
+
+    "ExpireRequest": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${WORKFLOW_ACTIONS_ARN}",
+        "Payload": { "action": "EXPIRE", "request.$": "$" }
+      },
+      "ResultPath": "$.result",
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "MarkFailed" }],
+      "End": true
+    },
+
+    "MarkFailed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${WORKFLOW_ACTIONS_ARN}",
+        "Payload": { "action": "FAIL", "request.$": "$" }
+      },
+      "ResultPath": "$.result",
+      "End": true
+    }
+  }
+}

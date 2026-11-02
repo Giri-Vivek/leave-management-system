@@ -1,0 +1,6 @@
+[
+  {"leave_type": "SICK",   "annual_quota": 12, "carry_forward_allowed": false, "max_carry_forward": 0,  "requires_hr_above_days": 5, "is_unlimited": false, "description": "Illness or medical appointments"},
+  {"leave_type": "CASUAL", "annual_quota": 10, "carry_forward_allowed": false, "max_carry_forward": 0,  "requires_hr_above_days": 5, "is_unlimited": false, "description": "Short personal time off"},
+  {"leave_type": "EARNED", "annual_quota": 18, "carry_forward_allowed": true,  "max_carry_forward": 10, "requires_hr_above_days": 5, "is_unlimited": false, "description": "Planned vacation, carries forward"},
+  {"leave_type": "UNPAID", "annual_quota": 0,  "carry_forward_allowed": false, "max_carry_forward": 0,  "requires_hr_above_days": 5, "is_unlimited": true,  "description": "No pay, no quota"}
+]

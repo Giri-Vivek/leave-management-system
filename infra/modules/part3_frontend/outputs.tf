@@ -1,0 +1,2 @@
+output "website_url" { value = var.enable_cloudfront ? "https://${aws_cloudfront_distribution.web[0].domain_name}" : "CloudFront disabled - run the frontend locally" }
+output "bucket" { value = aws_s3_bucket.web.id }

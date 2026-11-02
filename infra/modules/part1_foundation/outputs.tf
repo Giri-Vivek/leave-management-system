@@ -1,0 +1,10 @@
+output "common_env" { value = local.common_env }
+output "dynamodb_arns" { value = local.dynamodb_arns }
+output "zip_path" { value = data.archive_file.backend.output_path }
+output "zip_hash" { value = data.archive_file.backend.output_base64sha256 }
+output "api_id" { value = aws_apigatewayv2_api.api.id }
+output "api_endpoint" { value = aws_apigatewayv2_api.api.api_endpoint }
+output "api_execution_arn" { value = aws_apigatewayv2_api.api.execution_arn }
+output "authorizer_id" { value = aws_apigatewayv2_authorizer.cognito.id }
+output "user_pool_id" { value = aws_cognito_user_pool.pool.id }
+output "client_id" { value = aws_cognito_user_pool_client.web.id }

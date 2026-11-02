@@ -1,0 +1,6 @@
+[
+  {"employee_id": "EMP001", "name": "Nikhil Kumar",  "email": "nikhil.kumar@f13.tech",     "manager_id": "EMP100", "role": "Employee"},
+  {"employee_id": "EMP002", "name": "Darshan Kumar", "email": "darshankumarb3@gmail.com",   "manager_id": "EMP100", "role": "Employee"},
+  {"employee_id": "EMP100", "name": "Vivek Giri",    "email": "goswamivivek686@gmail.com", "manager_id": "EMP200", "role": "Manager"},
+  {"employee_id": "EMP200", "name": "Anjani Reddy",  "email": "anji78966@gmail.com",       "manager_id": "EMP100", "role": "HRAdmin"}
+]

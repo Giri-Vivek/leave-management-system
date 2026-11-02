@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en" data-theme="daylight">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Leave</title>
+  <script>try{var t=localStorage.getItem("leave-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ============ Sign in ============ -->
+<main id="login-view" class="login">
+  <section class="login-hero">
+    <p class="brand">Leave</p>
+    <h1 class="hero-line">
+      <span class="sr-only">Time off, handled.</span>
+      <span aria-hidden="true">Time off,</span>
+      <span class="typed-line" aria-hidden="true"><span id="typed"></span><span class="caret"></span></span>
+    </h1>
+    <p class="sub">Request leave, get approvals by email, and see who is out. All in one place.</p>
+  </section>
+
+  <form id="login-form" class="login-card" autocomplete="on">
+    <h2>Sign in</h2>
+    <label>Work email<input id="email" type="email" autocomplete="username" required></label>
+    <label>Password<input id="password" type="password" autocomplete="current-password" required></label>
+    <p id="login-error" class="error" role="alert" hidden></p>
+    <button class="btn" type="submit">Sign in</button>
+    <div class="theme-row">
+      <span class="muted">Theme</span>
+      <div class="themes" role="group" aria-label="Colour theme">
+        <button type="button" data-theme-pick="daylight" aria-label="Daylight theme" title="Daylight"></button>
+        <button type="button" data-theme-pick="midnight" aria-label="Midnight theme" title="Midnight"></button>
+        <button type="button" data-theme-pick="ocean" aria-label="Ocean theme" title="Ocean"></button>
+        <button type="button" data-theme-pick="sunset" aria-label="Sunset theme" title="Sunset"></button>
+      </div>
+    </div>
+  </form>
+</main>
+
+<!-- ============ App ============ -->
+<div id="app-view" hidden>
+  <header class="topbar">
+    <span class="wordmark">Leave</span>
+    <nav class="tabs" aria-label="Sections">
+      <button class="tab is-active" data-tab="mine">My leave</button>
+      <button class="tab" data-tab="team" id="team-tab" hidden>Team</button>
+    </nav>
+    <div class="themes" role="group" aria-label="Colour theme">
+      <button type="button" data-theme-pick="daylight" aria-label="Daylight theme" title="Daylight"></button>
+      <button type="button" data-theme-pick="midnight" aria-label="Midnight theme" title="Midnight"></button>
+      <button type="button" data-theme-pick="ocean" aria-label="Ocean theme" title="Ocean"></button>
+      <button type="button" data-theme-pick="sunset" aria-label="Sunset theme" title="Sunset"></button>
+    </div>
+    <div class="who">
+      <span class="avatar" id="avatar" aria-hidden="true"></span>
+      <span id="who-name"></span>
+      <button class="link" id="signout">Sign out</button>
+    </div>
+  </header>
+
+  <!-- My leave -->
+  <section id="tab-mine" class="page">
+    <div class="hero">
+      <div>
+        <p class="hero-date" id="hero-date"></p>
+        <h2 class="greeting" id="greeting"></h2>
+        <p class="tip" id="tip"></p>
+      </div>
+      <dl class="hero-stats">
+        <div><dt>Days available</dt><dd id="st-avail">0</dd></div>
+        <div><dt>Waiting for approval</dt><dd id="st-pending">0</dd></div>
+        <div><dt>Taken this year</dt><dd id="st-used">0</dd></div>
+      </dl>
+    </div>
+
+    <h2 class="sr-only">Balances</h2>
+    <div id="balances" class="balances" aria-live="polite"></div>
+
+    <div class="split">
+      <form id="apply-form" class="panel">
+        <h2>Request leave</h2>
+        <label>Leave type<select id="f-type" required></select></label>
+        <div class="row">
+          <label>From<input id="f-start" type="date" required></label>
+          <label>To<input id="f-end" type="date" required></label>
+        </div>
+        <p id="f-hint" class="muted" aria-live="polite">Pick your dates to see the working days.</p>
+        <label>Reason <span class="muted">(optional)</span><textarea id="f-reason" rows="3" maxlength="500"></textarea></label>
+        <p id="apply-msg" role="status" hidden></p>
+        <button class="btn" type="submit">Submit request</button>
+      </form>
+
+      <div class="panel">
+        <h2>History</h2>
+        <div class="table-wrap">
+          <table id="history">
+            <thead><tr><th>Type</th><th>Dates</th><th>Days</th><th>Status</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Team -->
+  <section id="tab-team" class="page" hidden>
+    <div class="panel">
+      <h2>Who is out</h2>
+      <div id="calendar"></div>
+    </div>
+
+    <div class="split">
+      <div class="panel">
+        <h2>Waiting for a decision</h2>
+        <p class="muted">Approve or reject from the signed link in the email each request generated.</p>
+        <div class="table-wrap">
+          <table id="pending">
+            <thead><tr><th>Employee</th><th>Type</th><th>Dates</th><th>Days</th><th>Status</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <form id="report-form" class="panel">
+        <h2>Leave report</h2>
+        <div class="row">
+          <label>From<input id="r-from" type="date" required></label>
+          <label>To<input id="r-to" type="date" required></label>
+        </div>
+        <p id="report-msg" class="error" role="alert" hidden></p>
+        <button class="btn" type="submit">Download CSV</button>
+      </form>
+    </div>
+  </section>
+</div>
+
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 data "aws_caller_identity" "me" {}
 
-# ------------------------------------------------------------------ reports Lambda + routes
+# ------------------------------------------------------------------ reports Lambda (read-only) + routes
 resource "aws_iam_role" "lambda" {
   name = "${var.project}-part3-lambda"
   assume_role_policy = jsonencode({
@@ -61,6 +61,74 @@ resource "aws_lambda_permission" "reports" {
   statement_id  = "AllowAPIGateway"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.reports.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${var.api_execution_arn}/*/*"
+}
+
+# ------------------------------------------------------------------ HR admin Lambda (can write balances and rules)
+resource "aws_iam_role" "admin" {
+  name = "${var.project}-part3-admin-lambda"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Principal = { Service = "lambda.amazonaws.com" }, Action = "sts:AssumeRole" }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "admin_logs" {
+  role       = aws_iam_role.admin.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_iam_role_policy" "admin" {
+  name = "admin-access"
+  role = aws_iam_role.admin.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:Query", "dynamodb:Scan"]
+        Resource = var.dynamodb_arns
+      },
+      { Effect = "Allow", Action = ["ses:SendEmail"], Resource = "*" }
+    ]
+  })
+}
+
+resource "aws_lambda_function" "admin" {
+  function_name    = "${var.project}-admin_api"
+  role             = aws_iam_role.admin.arn
+  runtime          = "python3.12"
+  handler          = "admin_api.handler"
+  filename         = var.zip_path
+  source_code_hash = var.zip_hash
+  timeout          = 60 # a quota change touches every employee's balance row
+  memory_size      = 256
+  environment {
+    variables = var.common_env
+  }
+}
+
+resource "aws_apigatewayv2_integration" "admin" {
+  api_id                 = var.api_id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.admin.invoke_arn
+  payload_format_version = "2.0"
+}
+
+resource "aws_apigatewayv2_route" "admin" {
+  for_each           = toset(["GET /admin/balances", "POST /admin/balance", "GET /admin/config", "POST /admin/config"])
+  api_id             = var.api_id
+  route_key          = each.key
+  target             = "integrations/${aws_apigatewayv2_integration.admin.id}"
+  authorization_type = "JWT"
+  authorizer_id      = var.authorizer_id
+}
+
+resource "aws_lambda_permission" "admin" {
+  statement_id  = "AllowAPIGateway"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.admin.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${var.api_execution_arn}/*/*"
 }

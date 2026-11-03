@@ -193,12 +193,113 @@ async function submitLeave(e) {
 }
 
 /* ---------------- Team ---------------- */
-async function loadPending() {
-  const { pending } = await api("/pending");
+function renderPending(pending) {
   $("#pending tbody").innerHTML = pending.map((r) => `<tr><td>${esc(r.employee_name)}</td><td>${esc(r.leave_type)}</td>
     <td>${dates(r)}</td><td>${esc(r.days)}</td><td>${badge(r.status)}</td></tr>`).join("")
     || `<tr><td colspan="5" class="empty">Nothing is waiting for you.</td></tr>`;
 }
+
+/* ---------------- new-request notifications (badge + pop-up) ---------------- */
+let lastPending = null, pollTimer = null, toastTimer = null;
+function setBadge(n) {
+  const el = $("#team-count");
+  el.textContent = n; el.hidden = n === 0;
+  document.title = n ? `(${n}) Leave` : "Leave";
+}
+function toast(text) {
+  const el = $("#toast");
+  el.textContent = text; el.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.hidden = true; }, 9000);
+}
+async function pollPending() {
+  try {
+    const { pending } = await api("/pending");
+    if (lastPending !== null && pending.length > lastPending) {
+      const r = pending[pending.length - 1];                    // list is oldest first
+      toast(`New leave request from ${r.employee_name}: ${r.leave_type}, ${r.days} day(s). Click to review.`);
+    }
+    lastPending = pending.length;
+    setBadge(pending.length);
+    if (!$("#tab-team").hidden) renderPending(pending);
+  } catch (e) { /* transient network error: try again next time */ }
+}
+function startPolling() {
+  pollPending();
+  pollTimer = setInterval(() => { if (!document.hidden) pollPending(); }, 20000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) pollPending(); });
+  $("#toast").addEventListener("click", () => { $("#toast").hidden = true; switchTab("team"); });
+}
+
+/* ---------------- HR controls: balances and rules ---------------- */
+const adjHtml = (name, type, b) => `<div class="adj">
+  <button type="button" class="step-btn" data-dir="-1" aria-label="Remove days from ${esc(name)}, ${esc(type)}">&minus;</button>
+  <span class="adj-val"><b>${b.available}</b><small>${b.used} used, ${b.pending} pending of ${b.total}</small></span>
+  <button type="button" class="step-btn" data-dir="1" aria-label="Add days to ${esc(name)}, ${esc(type)}">+</button></div>`;
+
+async function loadBalances() {
+  const d = await api("/admin/balances");
+  $("#bal-table thead").innerHTML = `<tr><th>Employee</th>${d.leave_types.map((t) => `<th>${esc(t)}</th>`).join("")}</tr>`;
+  $("#bal-table tbody").innerHTML = d.employees.map((e) => `<tr data-eid="${esc(e.employee_id)}" data-name="${esc(e.name)}">
+    <td><b>${esc(e.name)}</b><small class="muted">${esc(e.role)}</small></td>
+    ${d.leave_types.map((t) => `<td data-type="${esc(t)}">${adjHtml(e.name, t, e.balances[t])}</td>`).join("")}</tr>`).join("");
+}
+
+async function loadConfig() {
+  const d = await api("/admin/config");
+  $("#cfg-table tbody").innerHTML = d.config.map((c) => `<tr data-type="${esc(c.leave_type)}" data-desc="${esc(c.description)}">
+    <td><b>${esc(c.leave_type)}</b><small class="muted">${esc(c.description)}</small></td>
+    <td>${c.is_unlimited ? '<span class="muted">No quota</span>'
+      : `<input class="num in-quota" type="number" min="0" max="365" value="${c.annual_quota}" aria-label="Annual quota for ${esc(c.leave_type)}">`}</td>
+    <td><input class="in-cf" type="checkbox" ${c.carry_forward_allowed ? "checked" : ""} aria-label="Carry forward for ${esc(c.leave_type)}"></td>
+    <td><input class="num in-maxcf" type="number" min="0" max="365" value="${c.max_carry_forward}" aria-label="Max carried days for ${esc(c.leave_type)}"></td>
+    <td><input class="num in-hr" type="number" min="1" max="365" value="${c.requires_hr_above_days}" aria-label="HR approval threshold for ${esc(c.leave_type)}"></td>
+    <td><button type="button" class="btn small" data-save>Save</button></td></tr>`).join("");
+}
+
+$("#bal-table").addEventListener("click", async (e) => {
+  const btn = e.target.closest("button[data-dir]");
+  if (!btn) return;
+  const td = btn.closest("td"), tr = btn.closest("tr"), msg = $("#bal-msg");
+  const delta = Number(btn.dataset.dir) * Number($("#adj-step").value);
+  say(msg, "");
+  td.querySelectorAll("button").forEach((b) => (b.disabled = true));
+  try {
+    const out = await api("/admin/balance", { method: "POST", body: JSON.stringify({
+      employee_id: tr.dataset.eid, leave_type: td.dataset.type, delta }) });
+    td.innerHTML = adjHtml(tr.dataset.name, td.dataset.type, out.balance);
+    say(msg, `${tr.dataset.name}: ${td.dataset.type} ${delta > 0 ? "+" : ""}${delta} day(s). ${out.balance.available} available now.`, "flash ok");
+  } catch (err) {
+    say(msg, err.message, "flash bad");
+    td.querySelectorAll("button").forEach((b) => (b.disabled = false));
+  }
+});
+
+$("#cfg-table").addEventListener("click", async (e) => {
+  const btn = e.target.closest("button[data-save]");
+  if (!btn) return;
+  const tr = btn.closest("tr"), msg = $("#cfg-msg");
+  if ([...tr.querySelectorAll("input[type=number]")].some((i) => i.value === "")) {
+    say(msg, "Fill in every number before saving.", "flash bad"); return;
+  }
+  const body = {
+    leave_type: tr.dataset.type, description: tr.dataset.desc,
+    carry_forward_allowed: tr.querySelector(".in-cf").checked,
+    max_carry_forward: Number(tr.querySelector(".in-maxcf").value),
+    requires_hr_above_days: Number(tr.querySelector(".in-hr").value),
+    apply_to_existing: $("#apply-existing").checked,
+  };
+  const q = tr.querySelector(".in-quota");
+  if (q) body.annual_quota = Number(q.value);
+  btn.disabled = true; say(msg, "");
+  try {
+    const out = await api("/admin/config", { method: "POST", body: JSON.stringify(body) });
+    say(msg, `${tr.dataset.type} saved.` + (out.updated_balances ? ` ${out.updated_balances} balance(s) updated.` : "")
+      + (out.clamped ? ` ${out.clamped} could not go lower because those days are already used.` : ""), "flash ok");
+    await loadBalances();
+  } catch (err) { say(msg, err.message, "flash bad"); }
+  btn.disabled = false;
+});
 
 function startCalendar() {
   if (calendar) return;
@@ -238,7 +339,10 @@ function switchTab(name) {
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("is-active", t.dataset.tab === name));
   $("#tab-mine").hidden = name !== "mine";
   $("#tab-team").hidden = name !== "team";
-  if (name === "team") { startCalendar(); calendar.refetchEvents(); loadPending().catch(() => {}); }
+  if (name === "team") {
+    startCalendar(); calendar.refetchEvents(); pollPending();
+    if (groups.includes("HRAdmin")) { loadBalances().catch((e) => say($("#bal-msg"), e.message, "flash bad")); loadConfig().catch((e) => say($("#cfg-msg"), e.message, "flash bad")); }
+  }
 }
 
 async function showApp() {
@@ -248,7 +352,10 @@ async function showApp() {
   const name = me.employee.name;
   $("#who-name").textContent = name;
   $("#avatar").textContent = initials(name);
-  $("#team-tab").hidden = !(groups.includes("Manager") || groups.includes("HRAdmin"));
+  const isLead = groups.includes("Manager") || groups.includes("HRAdmin");
+  $("#team-tab").hidden = !isLead;
+  $("#hr-tools").hidden = !groups.includes("HRAdmin");
+  if (isLead) startPolling();
 
   $("#hero-date").textContent = new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
   buildGreeting(`${greetingWord()}, ${name.split(" ")[0]}`);

@@ -48,7 +48,7 @@
     <span class="wordmark">Leave</span>
     <nav class="tabs" aria-label="Sections">
       <button class="tab is-active" data-tab="mine">My leave</button>
-      <button class="tab" data-tab="team" id="team-tab" hidden>Team</button>
+      <button class="tab" data-tab="team" id="team-tab" hidden>Team <span class="count" id="team-count" hidden>0</span></button>
     </nav>
     <div class="themes" role="group" aria-label="Colour theme">
       <button type="button" data-theme-pick="daylight" aria-label="Daylight theme" title="Daylight"></button>
@@ -136,8 +136,45 @@
         <button class="btn" type="submit">Download CSV</button>
       </form>
     </div>
+
+    <!-- HR controls (HRAdmin only; the API enforces this too) -->
+    <div id="hr-tools" hidden>
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Leave balances</h2>
+            <p class="muted">Add or remove days for any employee with the + and - buttons.</p>
+          </div>
+          <label class="step">Change by
+            <select id="adj-step">
+              <option value="1">1 day</option><option value="2">2 days</option>
+              <option value="5">5 days</option><option value="10">10 days</option>
+            </select>
+          </label>
+        </div>
+        <p id="bal-msg" role="status" hidden></p>
+        <div class="table-wrap"><table id="bal-table"><thead></thead><tbody></tbody></table></div>
+      </div>
+
+      <div class="panel">
+        <h2>Leave rules</h2>
+        <p class="muted">Quotas and rules are stored in a table, so no code change is needed. Days are held as
+          pending when an employee applies and are deducted from the balance only on final approval.</p>
+        <label class="check"><input type="checkbox" id="apply-existing" checked>
+          When the annual quota changes, apply the difference to this year's existing balances</label>
+        <p id="cfg-msg" role="status" hidden></p>
+        <div class="table-wrap">
+          <table id="cfg-table">
+            <thead><tr><th>Leave type</th><th>Annual quota</th><th>Carry forward</th><th>Max carried days</th><th>HR approval above (days)</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   </section>
 </div>
+
+<div id="toast" class="toast" role="status" hidden></div>
 
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>

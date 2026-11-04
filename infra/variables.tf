@@ -20,8 +20,8 @@ variable "hr_email" {
 
 variable "approval_timeout_seconds" {
   type        = number
-  default     = 172800 # 48 hours. Use 120 while demoing the escalation path.
-  description = "How long a manager / HR has to respond before escalation or expiry"
+  default     = 86400 # 24 hours. How long an approver has before a reminder email; also the gap between reminders. Use 120 to demo.
+  description = "Seconds before the approver gets a reminder (and between reminders)"
 }
 
 variable "enable_workflow" {

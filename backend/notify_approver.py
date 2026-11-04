@@ -1,6 +1,8 @@
 """Called by Step Functions (waitForTaskToken). Emails the approver signed links, then the
-workflow PAUSES until the approver clicks one (or the 48h timeout fires)."""
+workflow PAUSES until the approver clicks one. If the timeout passes, the workflow comes back
+here with request['reminder'] set, so the same approver gets a REMINDER with fresh links."""
 import os
+from datetime import datetime, timezone
 
 import boto3
 
@@ -8,6 +10,14 @@ from common import (email_html, get_employee, get_request, now_iso, request_deta
                     sign_token, table)
 
 sns = boto3.client("sns")
+
+
+def _waiting_text(created_at):
+    try:
+        hours = int((datetime.now(timezone.utc) - datetime.fromisoformat(created_at)).total_seconds() // 3600)
+    except (TypeError, ValueError):
+        return "a while"
+    return f"{hours} hour(s)" if hours < 48 else f"{hours // 24} day(s)"
 
 
 def handler(event, context):
@@ -21,24 +31,30 @@ def handler(event, context):
         approver = {"employee_id": "HR_ADMIN", "name": "HR Admin", "email": os.environ["HR_EMAIL"]}
         status = "PENDING_HR"
 
-    # Park the task token on the request. Only the signed link can release it.
+    # Park the (new) task token on the request. Only a signed link can release it.
     table("REQUESTS_TABLE").update_item(
         Key={"employee_id": eid, "request_id": rid},
         UpdateExpression="SET task_token = :t, awaiting = :a, #st = :s, notified_at = :n",
         ExpressionAttributeNames={"#st": "status"},
         ExpressionAttributeValues={":t": token, ":a": stage, ":s": status, ":n": now_iso()})
 
-    ttl = int(r.get("approval_timeout", 172800)) + 3600
+    ttl = int(r.get("approval_timeout", 86400)) + 3600
     base = os.environ["API_BASE_URL"].rstrip("/")
     link = {a: f"{base}/decision?t={sign_token(eid, rid, stage, a, ttl)}" for a in ("APPROVE", "REJECT")}
 
-    intro = f"{employee['name']} has requested leave and needs your decision."
-    if r.get("escalation"):
-        intro = (f"{employee['name']}'s manager did not respond in time, so this request "
-                 f"was escalated to you.")
-    subject = f"[Action needed] {employee['name']}: {req['leave_type']} leave, {int(req['days'])} day(s)"
+    reminder = r.get("reminder") or {}
+    n = int(reminder.get("count", 0)) if reminder.get("stage") == stage else 0
+    base_subject = f"Action needed: {employee['name']}, {req['leave_type']} leave, {int(req['days'])} day(s)"
+    if n:
+        subject = f"[Reminder {n}] {base_subject}"
+        intro = (f"This leave request from {employee['name']} has been waiting for your decision for "
+                 f"{_waiting_text(req.get('created_at'))}. Please review it.")
+    else:
+        subject = f"[Action needed] {employee['name']}: {req['leave_type']} leave, {int(req['days'])} day(s)"
+        intro = f"{employee['name']} has requested leave and needs your decision."
+
     send_email(approver["email"], subject, email_html(
-        "Leave approval needed", intro, request_details(req),
+        "Leave request still pending" if n else "Leave approval needed", intro, request_details(req),
         [("Review and approve", link["APPROVE"], "#15803D"), ("Review and reject", link["REJECT"], "#B91C1C")]))
 
     # SNS notification (no links in it - topic subscribers must not receive approval powers)

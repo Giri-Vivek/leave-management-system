@@ -152,8 +152,9 @@ function meter(b) {
     + [...Array(free)].map(() => cell("free")).join("");
   return `<article class="meter"><div class="meter-head"><span class="meter-type">${esc(b.leave_type)}</span>
     <span class="meter-left"><b data-to="${b.available}">0</b><small>days left</small></span></div>
-    <div class="cells" role="img" aria-label="${b.used} used, ${b.pending} pending, ${free} free">${cells}</div>
-    <p class="meter-legend">${b.used} used, ${b.pending} pending of ${b.total}${b.carried_forward ? ` (incl. ${b.carried_forward} carried forward)` : ""}</p></article>`;
+    <div class="cells" role="img" aria-label="${b.used} used, ${b.pending} waiting for approval, ${free} free">${cells}</div>
+    ${b.pending ? `<p class="hold">${b.pending} day(s) waiting for approval, already taken off your balance</p>` : ""}
+    <p class="meter-legend">${b.used} used, ${b.pending} waiting for approval, ${b.total} in total${b.carried_forward ? ` (incl. ${b.carried_forward} carried forward)` : ""}</p></article>`;
 }
 
 async function loadMine() {
@@ -168,9 +169,12 @@ async function loadMine() {
 
   $("#f-type").innerHTML = bal.balances.map((b) =>
     `<option value="${esc(b.leave_type)}">${esc(b.leave_type)} (${b.unlimited ? "no quota" : b.available + " left"})</option>`).join("");
+  const unlimited = new Set(bal.balances.filter((b) => b.unlimited).map((b) => b.leave_type));
+  const WAITING = ["PENDING_MANAGER", "PENDING_HR", "ESCALATED"];
   const rows = hist.requests.map((r) => `<tr>
       <td>${esc(r.leave_type)}</td><td>${dates(r)}</td><td>${esc(r.days)}</td>
-      <td>${badge(r.status)}${r.reject_reason ? `<span class="reason">${esc(r.reject_reason)}</span>` : ""}</td></tr>`);
+      <td>${badge(r.status)}${r.reject_reason ? `<span class="reason">${esc(r.reject_reason)}</span>` : ""}`
+      + `${WAITING.includes(r.status) && !unlimited.has(r.leave_type) ? `<span class="reason">${esc(r.days)} day(s) on hold until it is decided</span>` : ""}</td></tr>`);
   $("#history tbody").innerHTML = rows.join("") || `<tr><td colspan="4" class="empty">No requests yet. Use the form to submit your first one.</td></tr>`;
 }
 
@@ -241,7 +245,7 @@ async function loadBalances() {
   const d = await api("/admin/balances");
   $("#bal-table thead").innerHTML = `<tr><th>Employee</th>${d.leave_types.map((t) => `<th>${esc(t)}</th>`).join("")}</tr>`;
   $("#bal-table tbody").innerHTML = d.employees.map((e) => `<tr data-eid="${esc(e.employee_id)}" data-name="${esc(e.name)}">
-    <td><b>${esc(e.name)}</b><small class="muted">${esc(e.role)}</small></td>
+    <td><b>${esc(e.name)}</b><small class="muted">${esc(e.employee_id)}, ${esc(e.role)}</small></td>
     ${d.leave_types.map((t) => `<td data-type="${esc(t)}">${adjHtml(e.name, t, e.balances[t])}</td>`).join("")}</tr>`).join("");
 }
 

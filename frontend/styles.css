@@ -212,3 +212,7 @@ label.check { display: flex; align-items: center; gap: 10px; font-weight: 500; m
 .tab.is-active .count { background: #fff; color: var(--bad); }
 .toast { position: fixed; right: 20px; bottom: 20px; z-index: 50; max-width: 360px; padding: 14px 18px; border-radius: 12px; background: var(--ink); color: var(--paper); font-weight: 500; cursor: pointer; box-shadow: 0 12px 32px rgba(0,0,0,.3); animation: toast-in .35s cubic-bezier(.2, .8, .2, 1); }
 @keyframes toast-in { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+
+/* waiting-for-approval note on a balance card */
+.hold { margin: 0 0 8px; padding: 6px 10px; border-radius: 8px; background: var(--wait-bg); color: var(--wait); font-size: 13px; font-weight: 600; }
+.hold::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 8px; border-radius: 50%; background: currentColor; animation: dot 1.6s ease-in-out infinite; }

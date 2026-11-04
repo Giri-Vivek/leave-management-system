@@ -1,7 +1,14 @@
-"""Called by Step Functions for every non-waiting step: ESCALATE, FINAL_APPROVE, FINAL_REJECT,
-EXPIRE, FAIL. Each action is idempotent so Step Functions can safely retry it."""
+"""Called by Step Functions for every non-waiting step: REMIND, FINAL_APPROVE, FINAL_REJECT,
+EXPIRE, FAIL. Each action is idempotent so Step Functions can safely retry it.
+(ESCALATE is legacy: it only exists so executions started before reminders replaced
+escalation can still finish. New requests never use it.)"""
+import os
+
 from common import (available, email_html, finalize_request, get_config, get_employee,
                     get_or_create_balance, now_iso, request_details, send_email, table)
+
+# How many reminder emails an approver gets (one per approval_timeout) before the request expires
+MAX_REMINDERS = int(os.environ.get("MAX_REMINDERS", "7"))
 
 
 def _remaining_line(req):
@@ -17,7 +24,15 @@ def handler(event, context):
     eid, rid = r["employee_id"], r["request_id"]
     emp = get_employee(eid)
 
-    if action == "ESCALATE":
+    if action == "REMIND":
+        # The reminder EMAIL is sent by notify_approver when the workflow loops back to the
+        # waiting step (fresh approve/reject links). Here we only count, per approver stage.
+        stage = event.get("stage", "MANAGER")
+        prev = r.get("reminder") or {}
+        count = (int(prev.get("count", 0)) if prev.get("stage") == stage else 0) + 1
+        return {"stage": stage, "count": count, "give_up": count > MAX_REMINDERS}
+
+    if action == "ESCALATE":    # legacy, see module docstring
         table("REQUESTS_TABLE").update_item(
             Key={"employee_id": eid, "request_id": rid},
             UpdateExpression="SET #st = :e, escalated_at = :n REMOVE task_token, awaiting",
@@ -48,13 +63,16 @@ def handler(event, context):
         return {"status": "REJECTED"}
 
     if action == "EXPIRE":
-        req = finalize_request(eid, rid, "EXPIRED", {"reject_reason": "No approver responded in time"})
+        req = finalize_request(eid, rid, "EXPIRED", {"reject_reason": "No decision after several reminders"})
         send_email(emp["email"], f"Leave request expired ({req['leave_type']})", email_html(
-            "Request expired", "Nobody responded in time. Your days were released - please resubmit.",
+            "Request expired", "Nobody decided after several reminders. Your days were released - please resubmit.",
             request_details(req)))
         return {"status": "EXPIRED"}
 
-    req = finalize_request(eid, rid, "FAILED", {"reject_reason": "Workflow error - contact HR"})  # FAIL
-    send_email(emp["email"], "Leave request could not be processed", email_html(
-        "Processing error", "Something went wrong. Your days were released - please resubmit or contact HR.", {}))
-    return {"status": "FAILED"}
+    if action == "FAIL":
+        finalize_request(eid, rid, "FAILED", {"reject_reason": "Workflow error - contact HR"})
+        send_email(emp["email"], "Leave request could not be processed", email_html(
+            "Processing error", "Something went wrong. Your days were released - please resubmit or contact HR.", {}))
+        return {"status": "FAILED"}
+
+    raise ValueError(f"Unknown workflow action: {action}")

@@ -9,15 +9,16 @@ and the balance is settled exactly once, on final approval.
 | State machine definition | [statemachine/leave_approval.asl.json](../statemachine/leave_approval.asl.json) |
 | `notify_approver` - emails approve/reject links, publishes SNS, **pauses** the workflow | `backend/notify_approver.py` |
 | `decision_handler` - public `/decision` route that checks the signature and resumes the workflow | `backend/decision_handler.py` |
-| `workflow_actions` - escalate, final approve/reject, expire, fail (all idempotent) | `backend/workflow_actions.py` |
+| `workflow_actions` - remind, final approve/reject, expire, fail (all idempotent) | `backend/workflow_actions.py` |
 | `carry_forward` - weekly EventBridge job | `backend/carry_forward.py` |
 | Terraform: secret, SNS topic, 4 Lambdas, state machine, EventBridge rule | `infra/modules/part2_workflow/main.tf` |
 
 ## The state machine
 ```
-NotifyManager (waits for click, timeout = 48h)
-   |-- timeout --> EscalateToHR --> NotifyHR
-   |-- approved --> requires_hr? --yes--> NotifyHR (timeout --> ExpireRequest)
+NotifyManager (waits for click, timeout = 24h)
+   |-- timeout --> RemindManager --> NotifyManager again (reminder email, fresh links)
+   |                      '-- after 7 reminders --> ExpireRequest
+   |-- approved --> requires_hr? --yes--> NotifyHR (timeout --> reminder to HR, same loop)
    |                      |--no--> FinalApprove
    '-- rejected --> FinalReject
 NotifyHR --> approved: FinalApprove / rejected: FinalReject
@@ -50,5 +51,5 @@ To demo escalation quickly add `-var approval_timeout_seconds=120`.
 - [ ] Approve path ends with status `APPROVED`, `used` up by N, `pending` back down by N
 - [ ] Reject path releases the pending days
 - [ ] 6+ day request needs both manager and HR
-- [ ] With a 120s timeout, an ignored request escalates to HR, then expires after another 120s
+- [ ] With a 120s timeout, an ignored request sends the manager a reminder every 120s and never goes to HR; after 7 reminders it expires
 - [ ] Re-running `carry_forward` does not change balances a second time

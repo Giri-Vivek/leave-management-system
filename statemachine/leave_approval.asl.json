@@ -1,5 +1,5 @@
 {
-  "Comment": "Leave approval: manager -> (HR if long leave) -> settle balance. 48h timeout escalates to HR.",
+  "Comment": "Leave approval: manager -> (HR if long leave) -> settle balance. No decision within the timeout = reminder email to the SAME approver (never escalates to HR). After too many reminders the request expires.",
   "StartAt": "NotifyManager",
   "States": {
     "NotifyManager": {
@@ -12,10 +12,38 @@
       "TimeoutSecondsPath": "$.approval_timeout",
       "ResultPath": "$.manager_result",
       "Catch": [
-        { "ErrorEquals": ["States.Timeout"], "ResultPath": "$.error", "Next": "EscalateToHR" },
+        { "ErrorEquals": ["States.Timeout"], "ResultPath": "$.error", "Next": "RemindManager" },
         { "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "MarkFailed" }
       ],
       "Next": "ManagerDecision"
+    },
+
+    "RemindManager": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${WORKFLOW_ACTIONS_ARN}",
+        "Payload": { "action": "REMIND", "stage": "MANAGER", "request.$": "$" }
+      },
+      "ResultSelector": {
+        "stage.$": "$.Payload.stage",
+        "count.$": "$.Payload.count",
+        "give_up.$": "$.Payload.give_up"
+      },
+      "ResultPath": "$.reminder",
+      "Retry": [
+        { "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 2, "MaxAttempts": 3, "BackoffRate": 2.0 }
+      ],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "MarkFailed" }],
+      "Next": "ManagerReminderCheck"
+    },
+
+    "ManagerReminderCheck": {
+      "Type": "Choice",
+      "Choices": [
+        { "Variable": "$.reminder.give_up", "BooleanEquals": true, "Next": "ExpireRequest" }
+      ],
+      "Default": "NotifyManager"
     },
 
     "ManagerDecision": {
@@ -33,21 +61,6 @@
       "Default": "FinalReject"
     },
 
-    "EscalateToHR": {
-      "Type": "Task",
-      "Resource": "arn:aws:states:::lambda:invoke",
-      "Parameters": {
-        "FunctionName": "${WORKFLOW_ACTIONS_ARN}",
-        "Payload": { "action": "ESCALATE", "request.$": "$" }
-      },
-      "ResultPath": "$.escalation",
-      "Retry": [
-        { "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 2, "MaxAttempts": 3, "BackoffRate": 2.0 }
-      ],
-      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "MarkFailed" }],
-      "Next": "NotifyHR"
-    },
-
     "NotifyHR": {
       "Type": "Task",
       "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
@@ -58,10 +71,38 @@
       "TimeoutSecondsPath": "$.approval_timeout",
       "ResultPath": "$.hr_result",
       "Catch": [
-        { "ErrorEquals": ["States.Timeout"], "ResultPath": "$.error", "Next": "ExpireRequest" },
+        { "ErrorEquals": ["States.Timeout"], "ResultPath": "$.error", "Next": "RemindHR" },
         { "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "MarkFailed" }
       ],
       "Next": "HRDecision"
+    },
+
+    "RemindHR": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${WORKFLOW_ACTIONS_ARN}",
+        "Payload": { "action": "REMIND", "stage": "HR", "request.$": "$" }
+      },
+      "ResultSelector": {
+        "stage.$": "$.Payload.stage",
+        "count.$": "$.Payload.count",
+        "give_up.$": "$.Payload.give_up"
+      },
+      "ResultPath": "$.reminder",
+      "Retry": [
+        { "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 2, "MaxAttempts": 3, "BackoffRate": 2.0 }
+      ],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "MarkFailed" }],
+      "Next": "HRReminderCheck"
+    },
+
+    "HRReminderCheck": {
+      "Type": "Choice",
+      "Choices": [
+        { "Variable": "$.reminder.give_up", "BooleanEquals": true, "Next": "ExpireRequest" }
+      ],
+      "Default": "NotifyHR"
     },
 
     "HRDecision": {

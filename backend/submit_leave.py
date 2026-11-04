@@ -100,4 +100,5 @@ def handler(event, context):
                email_html("Request submitted",
                           "Your manager has been notified. You will get an email at every stage.",
                           request_details(item)))
-    return response(201, {"request": item, "message": "Request submitted - waiting for manager approval"})
+    hold = "" if unlimited else f" {days} day(s) are on hold from your {leave_type} balance until it is decided."
+    return response(201, {"request": item, "message": "Request submitted, waiting for approval." + hold})
